@@ -277,7 +277,7 @@ export class Agent {
       const mt = Math.max(0.05, base * strength[i]);
       this.joints[i].setMotorMaxForce(mt);
       this.joints[i].configureMotorPosition(t, mt * kpBase, mt * CONFIG.motorDampingFactor);
-      this.torqueFrac[i] = clamp((t - this.angle[i]) * kpBase - this.vel[i] * CONFIG.motorDampingFactor, -base, base) / base;
+      this.torqueFrac[i] = clamp((t - this.angle[i]) * kpBase - this.vel[i] * CONFIG.motorDampingFactor, -1, 1);
     }
   }
 
@@ -338,12 +338,12 @@ export class Agent {
     this.peakSpeed = Math.max(this.peakSpeed, this.speed);
     {
       const x = q[idx.pelvis * 4], y = q[idx.pelvis * 4 + 1], z = q[idx.pelvis * 4 + 2], w = q[idx.pelvis * 4 + 3];
-      this.pUp[0] = 2 * (x * y + w * z);
+      this.pUp[0] = 2 * (x * y - w * z);
       this.pUp[1] = 1 - 2 * (x * x + z * z);
-      this.pUp[2] = 2 * (y * z - w * x);
+      this.pUp[2] = 2 * (y * z + w * x);
       this.pFwd[0] = 1 - 2 * (y * y + z * z);
-      this.pFwd[1] = 2 * (x * y - w * z);
-      this.pFwd[2] = 2 * (x * z + w * y);
+      this.pFwd[1] = 2 * (x * y + w * z);
+      this.pFwd[2] = 2 * (x * z - w * y);
       this.upX = 2 * (x * y - w * z);
       this.upY = this.pUp[1];
       this.upZ = 2 * (y * z + w * x);
@@ -352,9 +352,9 @@ export class Agent {
     {
       const c = idx.chest * 4;
       const x = q[c], y = q[c + 1], z = q[c + 2], w = q[c + 3];
-      this.cUp[0] = 2 * (x * y + w * z);
+      this.cUp[0] = 2 * (x * y - w * z);
       this.cUp[1] = 1 - 2 * (x * x + z * z);
-      this.cUp[2] = 2 * (y * z - w * x);
+      this.cUp[2] = 2 * (y * z + w * x);
       this.chestUpY = this.cUp[1];
     }
     this.chestY = B[idx.chest].translation().y;

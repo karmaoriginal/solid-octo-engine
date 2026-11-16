@@ -76,6 +76,10 @@ export interface BrainFile {
   activeTask: TaskId;
   tasks: Partial<Record<TaskId, TaskBrainFile>>;
   savedAt: string;
+  training?: { gaitGuidance: number; exploration: number };
+  physics?: PhysicsSettings;
+  autoAssist?: boolean;
+  autoCurriculum?: boolean;
   model: typeof BRAIN_INFO;
 }
 
@@ -204,6 +208,9 @@ export class Simulation {
   history: GenStat[] = [];
   private brains = new Map<TaskId, BrainState>();
   private rng: Rng = makeRng(Date.now() & 0xffffff);
+  /** Peso de la recompensa de pasos alternados y estabilidad en marcha. */
+  gaitGuidance = 1;
+  exploration = 1;
   private nextCand = 0;
   private results: (Result | null)[] = [];
   private completed = 0;
@@ -213,9 +220,10 @@ export class Simulation {
   events: string[] = [];
   desiredSlots = CONFIG.agentsDesktop;
 
-  static async create(): Promise<Simulation> {
+  static async create(seed?: number): Promise<Simulation> {
     await RAPIER.init();
     const s = new Simulation();
+    if (seed !== undefined) s.rng = makeRng(seed);
     s.init();
     return s;
   }
@@ -240,7 +248,7 @@ export class Simulation {
   private ensureBrain(id: TaskId): BrainState {
     let b = this.brains.get(id);
     if (!b) {
-      const evo = new Evolution(initGenome(this.rng), mutationScales(), this.rng);
+      const evo = new Evolution(initGenome(this.rng), mutationScales(taskIndex(id)), this.rng);
       evo.denseCount = CPG_PARAMS;
       evo.nnFactor = 0.2;
       evo.ask();
@@ -307,6 +315,15 @@ export class Simulation {
     this.restartAll(true);
   }
 
+  setTraining(gaitGuidance: number, exploration: number) {
+    if (!Number.isFinite(gaitGuidance) || !Number.isFinite(exploration)) return;
+    this.gaitGuidance = clamp(gaitGuidance, 0, 2);
+    this.exploration = clamp(exploration, 0.25, 2);
+    this.updateNnStage();
+    this.evo.ask();
+    this.restartAll(true);
+  }
+
   setPhysics(p: PhysicsSettings) {
     CONFIG.gravityScale = clamp(p.gravityScale, 0.2, 2);
     CONFIG.loadScale = clamp(p.loadScale, 0.2, 2);
@@ -350,7 +367,8 @@ export class Simulation {
 
   resetSlot(i: number) {
     const s = this.slots[i];
-    if (s) this.startEpisode(s);
+    if (s && s.role === "es") this.restartAll(true);
+    else if (s) this.startEpisode(s);
   }
 
   private startEpisode(s: Slot) {
@@ -469,7 +487,8 @@ export class Simulation {
       s.state = "linger";
       s.lingerT = 0;
       if (s.role === "es") {
-        s.fit -= CONFIG.reward.fall;
+        // En marcha, caer enseguida no debe superar a mantener el equilibrio.
+        s.fit -= this.taskId === "walk" ? 8 : CONFIG.reward.fall;
         this.finishEs(s);
       }
       return;
@@ -731,6 +750,15 @@ export class Simulation {
         R.jerk * jerk -
         R.straight * straight -
         R.drag * drag) * dtc;
+    if (this.taskId === "walk") {
+      const left = a.footContact(0, this.layout.profile);
+      const right = a.footContact(1, this.layout.profile);
+      // Un apoyo alterno y desplazamiento progresivo son preferibles a saltar con ambos pies.
+      const singleSupport = left !== right ? 1 : 0;
+      const airborne = !left && !right ? 1 : 0;
+      const armBack = J_SHOULDER.reduce((sum, j) => sum + Math.max(0, -a.angle[j] - 0.45), 0);
+      r += this.gaitGuidance * dtc * (1.2 * posture + 0.8 * singleSupport * Math.max(0, a.vx) - 1.5 * airborne - 0.5 * armBack);
+    }
     const ev = s.eventCount - s.eventPrev;
     s.eventPrev = s.eventCount;
     const cmb = s.metrics.combo - s.comboPrev;
@@ -787,23 +815,27 @@ export class Simulation {
   }
 
   private updateNnStage() {
-    this.evo.nnFactor = clamp((CONFIG.nnStartAssist - this.assist) / 0.25, 0.2, 1);
+    this.evo.nnFactor = clamp((CONFIG.nnStartAssist - this.assist) / 0.25, 0.45, 1) * this.exploration;
   }
 
   private updateAssist(elite: Result) {
-    if (!this.autoAssist || this.assist <= 0) return;
+    if (!this.autoAssist) return;
     const A = CONFIG.assist;
     const def = taskDef(this.taskId);
     const goal = Math.min(A.minDist, def.target * 0.35);
     this.assistStall++;
-    if (elite.time >= def.episode - 0.1 && elite.metric >= goal) {
+    if (elite.time >= def.episode - 0.1 && elite.metric >= goal && this.assist > 0) {
       this.assist = Math.max(0, this.assist - A.step);
       this.assistStall = 0;
     } else if (this.assistStall >= A.stallGenerations) {
-      this.assist = Math.max(0, this.assist - A.slowStep);
+      // Recuperar gradualmente apoyo si la élite cae inmediatamente tras quitarlo.
+      if (elite.time < 2 && this.assist < def.assistStart) {
+        this.assist = Math.min(def.assistStart, this.assist + A.step);
+        this.events.push("🪢 Se ha aumentado el arnés para recuperar el equilibrio");
+      }
       this.assistStall = 0;
     }
-    if (this.assist < 0.005) {
+    if (this.assist > 0 && this.assist < 0.005) {
       this.assist = 0;
       this.events.push("🎓 ¡Arnés retirado! Física sin ayudas");
     }
@@ -824,7 +856,7 @@ export class Simulation {
 
   resetBrain() {
     const b = this.ensureBrain(this.taskId);
-    const evo = new Evolution(initGenome(this.rng), mutationScales(), this.rng);
+    const evo = new Evolution(initGenome(this.rng), mutationScales(taskIndex(this.taskId)), this.rng);
     evo.denseCount = CPG_PARAMS;
     evo.nnFactor = 0.2;
     evo.ask();
@@ -939,6 +971,7 @@ export class Simulation {
       goal: def.target,
       taskBest,
       model: BRAIN_INFO,
+      training: { gaitGuidance: this.gaitGuidance, exploration: this.exploration },
       physics: {
         massKg: mass,
         loadKg: this.layout.loadKg,
@@ -1016,14 +1049,18 @@ export class Simulation {
       activeTask: this.taskId,
       tasks,
       savedAt: new Date().toISOString(),
+      training: { gaitGuidance: this.gaitGuidance, exploration: this.exploration },
+      physics: { gravityScale: CONFIG.gravityScale, loadScale: CONFIG.loadScale, muscleScale: CONFIG.muscleScale, fatigueScale: CONFIG.fatigueScale, groundFriction: CONFIG.groundFriction },
+      autoAssist: this.autoAssist,
+      autoCurriculum: this.autoCurriculum,
       model: BRAIN_INFO,
     };
   }
 
-  private evolutionFrom(d: TaskBrainFile): Evolution {
+  private evolutionFrom(d: TaskBrainFile, id: TaskId): Evolution {
     if (!d || d.mean.length !== GENOME_SIZE || d.elite.length !== GENOME_SIZE) throw new Error("Genoma no compatible con el modelo de 100 M parámetros");
-    const evo = new Evolution(Float32Array.from(d.mean), mutationScales(), this.rng);
-    evo.load(Float32Array.from(d.mean), Float32Array.from(d.elite), clamp(d.sigma, 0.04, 1.2), d.gen, d.eliteFit);
+    const evo = new Evolution(Float32Array.from(d.mean), mutationScales(taskIndex(id)), this.rng);
+    evo.load(Float32Array.from(d.mean), Float32Array.from(d.elite), clamp(d.sigma, 0.04, 1.2), d.gen, Number.isFinite(d.eliteFit) ? d.eliteFit : -Infinity);
     evo.denseCount = CPG_PARAMS;
     evo.nnFactor = clamp((CONFIG.nnStartAssist - clamp(d.assist, 0, 1)) / 0.25, 0.2, 1);
     evo.ask();
@@ -1040,7 +1077,7 @@ export class Simulation {
       if (!d) continue;
       const history = (d.history ?? []).map((h) => ({ ...h, task: t.id }));
       next.set(t.id, {
-        evo: this.evolutionFrom(d),
+        evo: this.evolutionFrom(d, t.id),
         history,
         assist: clamp(d.assist ?? t.assistStart, 0, 1),
         assistStall: 0,
@@ -1051,6 +1088,19 @@ export class Simulation {
       });
     }
     this.brains = next;
+    if (b.physics && Object.values(b.physics).length === 5 && Object.values(b.physics).every(Number.isFinite)) {
+      CONFIG.gravityScale = clamp(b.physics.gravityScale, 0.2, 2);
+      CONFIG.loadScale = clamp(b.physics.loadScale, 0.2, 2);
+      CONFIG.muscleScale = clamp(b.physics.muscleScale, 0.4, 1.8);
+      CONFIG.fatigueScale = clamp(b.physics.fatigueScale, 0, 2.5);
+      CONFIG.groundFriction = clamp(b.physics.groundFriction, 0.3, 1.8);
+    }
+    if (typeof b.autoAssist === "boolean") this.autoAssist = b.autoAssist;
+    if (typeof b.autoCurriculum === "boolean") this.autoCurriculum = b.autoCurriculum;
+    if (b.training && Number.isFinite(b.training.gaitGuidance) && Number.isFinite(b.training.exploration)) {
+      this.gaitGuidance = clamp(b.training.gaitGuidance, 0, 2);
+      this.exploration = clamp(b.training.exploration, 0.25, 2);
+    }
     const active: TaskId = TASKS.some((t) => t.id === b.activeTask) ? b.activeTask : "walk";
     this.taskId = active;
     const state = this.ensureBrain(active);

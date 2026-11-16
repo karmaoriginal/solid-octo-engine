@@ -28,6 +28,7 @@ send({ t: "import", data: { format: "x" } }); await wait(100);
 console.log("toasts", log.filter((m) => m.t === "toast").map((m) => m.text));
 const s2 = log.filter((m) => m.t === "snap").pop().snap;
 assert(count("ready") > 0 && count("frame") > 0 && count("snap") > 0);
+assert(count("checkpoint") > 0, "debe emitir autoguardados");
 assert(log.some(m => m.t === "toast" && m.text.includes("v2 cargado")));
 send({ t: "task", task: "boxing" }); await wait(500);
 const boxingProfile = log.filter(m => m.t === "profile").pop();

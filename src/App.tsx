@@ -76,8 +76,12 @@ export default function App() {
   const [manualU, setManualU] = useState<number[]>(() => new Array(N_JOINTS).fill(0));
   const [agentsSlider, setAgentsSlider] = useState(CONFIG.agentsMobile);
   const [assistManual, setAssistManual] = useState(0.5);
-  const [hasSaved, setHasSaved] = useState(() => !!localStorage.getItem(BRAIN_KEY));
+
   const [confirmReset, setConfirmReset] = useState(false);
+  const [background, setBackground] = useState(true);
+  const [guidance, setGuidance] = useState(1);
+  const [exploration, setExploration] = useState(1);
+  const [gpu] = useState(() => typeof navigator !== "undefined" && "gpu" in navigator);
 
   const toast = useCallback((text: string) => {
     const id = Math.random();
@@ -152,7 +156,7 @@ export default function App() {
       const json = JSON.stringify(b);
       try {
         localStorage.setItem(BRAIN_KEY, json);
-        setHasSaved(true);
+
       } catch {
         /* sin espacio */
       }
@@ -417,7 +421,7 @@ export default function App() {
               <Btn className="col-span-2" onClick={() => setSheet("physics")}>⚙️ Ajustar física</Btn>
               <Btn className="min-h-14 !bg-emerald-600" onClick={saveBrain}>💾 Guardar cerebro</Btn>
               <Btn className="min-h-14" onClick={() => fileRef.current?.click()}>📂 Cargar archivo</Btn>
-              <Btn className="min-h-14 col-span-2" disabled={!hasSaved} onClick={loadLocal}>📱 Cargar último guardado del dispositivo</Btn>
+              <Btn className="min-h-14 col-span-2" onClick={loadLocal}>📱 Cargar último guardado del dispositivo</Btn>
             </div>
             <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
 
@@ -442,9 +446,19 @@ export default function App() {
               <div className="text-[11px] text-white/50">Se ajusta solo si bajan los FPS (calidad {perf.quality}/3).</div>
             </div>
 
+            <div className="rounded-2xl bg-white/5 p-3 space-y-2">
+              <div className="font-bold">🧠 Ajustes de aprendizaje</div>
+              <p className="text-xs text-white/60">Se aplican a la generación siguiente; al aplicar se reinician los episodios incompletos, no el cerebro.</p>
+              <label className="block text-sm">Guía de marcha: {guidance.toFixed(1)}×<input type="range" min="0" max="2" step="0.1" value={guidance} onChange={e => setGuidance(Number(e.target.value))} className="w-full accent-sky-400" /></label>
+              <label className="block text-sm">Exploración neuronal: {exploration.toFixed(2)}×<input type="range" min="0.25" max="2" step="0.05" value={exploration} onChange={e => setExploration(Number(e.target.value))} className="w-full accent-sky-400" /></label>
+              <Btn className="w-full" onClick={() => { eng()?.send({t: "training", guidance, exploration}); toast("🧠 Ajustes aplicados"); }}>Aplicar ajustes</Btn>
+              <p className="text-xs text-white/50">Actual: guía {(s?.training.gaitGuidance ?? 1).toFixed(1)}× · exploración {(s?.training.exploration ?? 1).toFixed(2)}×</p>
+            </div>
+            <Toggle label="Intentar entrenar en segundo plano" desc="Solo con la página abierta: el navegador puede reducir la velocidad o suspenderla para ahorrar batería." on={background} onChange={v => { setBackground(v); eng()?.setBackgroundTraining(v); }} />
+            <p className="text-xs leading-relaxed text-white/50">Autoguardado local aproximadamente cada 3 segundos cuando hay progreso; se restaura al abrir. La generación en curso puede repetirse. Exporta una copia para no depender del almacenamiento del navegador. GitHub Pages no ejecuta la simulación. WebGPU {gpu ? "está disponible en este navegador, pero esta simulación todavía usa CPU" : "no está disponible aquí"}; Rapier y el entrenamiento actual no usan GPU.</p>
             <Toggle
               label="Retirar el arnés automáticamente"
-              desc="El arnés virtual ayuda al principio y se retira al aprender"
+              desc="Se reduce al lograr el objetivo; puede aumentar si se estanca cayendo"
               on={s?.autoAssist ?? true}
               onChange={(v) => eng()?.send({ t: "assist", auto: v, value: assistManual })}
             />

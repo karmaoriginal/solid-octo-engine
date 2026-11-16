@@ -106,7 +106,7 @@ const TEMPLATES: Template[] = [
   {
     freq: 0, sym: 0,
     amp: { [K.hip]: 0.45, [K.knee]: 0.55, [K.ankle]: 0.3, [K.shoulder]: 0.25, [K.elbow]: 0.15, [K.spine]: 0.06 },
-    phase: { [K.hip]: 0, [K.knee]: 1.1, [K.ankle]: 0.4, [K.shoulder]: 0.2, [K.elbow]: 0.5 },
+    phase: { [K.hip]: 0, [K.knee]: 1.1, [K.ankle]: 0.4, [K.shoulder]: 3.34, [K.elbow]: 0.5 },
     bias: { [K.knee]: 0.08, [K.spine]: 0.05 },
     act: { [K.knee]: 0.06 },
   },
@@ -172,7 +172,7 @@ export function initGenome(rng: Rng): Float32Array {
 }
 
 /** Escala relativa de mutación de cada parámetro. */
-export function mutationScales(): Float32Array {
+export function mutationScales(activeTask?: number): Float32Array {
   const s = new Float32Array(GENOME_SIZE);
   for (let i = 0; i < CPG_PARAMS; i++) s[i] = CONFIG.cpgScale;
   s[OFF_FREQ] = CONFIG.cpgScale * 0.4;
@@ -189,6 +189,22 @@ export function mutationScales(): Float32Array {
   for (let i = OFF_ROUTER_KEY; i < OFF_MOE_OUT; i++) s[i] = 0.08;
   for (let i = OFF_MOE_OUT; i < OFF_MOE_GAIN; i++) s[i] = 0.05;
   for (let i = OFF_MOE_GAIN; i < GENOME_SIZE; i++) s[i] = 0.04;
+  if (activeTask !== undefined) {
+    // Cada cerebro evalúa una sola disciplina: no gastar mutaciones en las otras.
+    for (let t = 0; t < T; t++) if (t !== activeTask) {
+      s[OFF_TASK_FREQ + t] = 0;
+      s[OFF_SYM + t] = 0;
+      s.fill(0, OFF_AMP + t * NG, OFF_AMP + (t + 1) * NG);
+      s.fill(0, OFF_PHASE + t * NG, OFF_PHASE + (t + 1) * NG);
+      s.fill(0, OFF_BIAS + t * NG, OFF_BIAS + (t + 1) * NG);
+      s.fill(0, OFF_TASK_GAIN + t * N_JOINTS, OFF_TASK_GAIN + (t + 1) * N_JOINTS);
+      s.fill(0, OFF_ACT_BIAS + t * N_JOINTS, OFF_ACT_BIAS + (t + 1) * N_JOINTS);
+      s.fill(0, OFF_ROUTER_KEY + t * E * D, OFF_ROUTER_KEY + (t + 1) * E * D);
+      s.fill(0, OFF_ROUTER_BIAS + t * E, OFF_ROUTER_BIAS + (t + 1) * E);
+      s.fill(0, OFF_MOE_OUT + t * N_JOINTS * ACTIVE_ROWS, OFF_MOE_OUT + (t + 1) * N_JOINTS * ACTIVE_ROWS);
+      s[OFF_MOE_GAIN + t] = 0;
+    }
+  }
   return s;
 }
 

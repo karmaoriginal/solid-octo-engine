@@ -17,6 +17,9 @@ const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let sim: Simulation | null = null;
 let speed = 1;
 let paused = false;
+let background = false;
+let checkpointAt = 0;
+let checkpointKey = "";
 let budgetMs = 12;
 let last = performance.now();
 let acc = 0;
@@ -65,7 +68,13 @@ function loop() {
       winSteps = 0;
       winStart = t;
     }
-    if (t - lastPost >= 15) {
+    const key = `${sim.taskId}:${sim.evo.gen}`;
+    if (key !== checkpointKey && t - checkpointAt >= 3000) {
+      checkpointKey = key;
+      checkpointAt = t;
+      ctx.postMessage({ t: "checkpoint", data: sim.exportBrain() });
+    }
+    if (t - lastPost >= 15 && !background) {
       lastPost = t;
       postFrame();
     }
@@ -175,6 +184,10 @@ ctx.onmessage = async (e: MessageEvent) => {
     sim = await Simulation.create();
     sim.desiredSlots = m.agents;
     sim.configure("train");
+    if (m.saved) {
+      try { sim.importBrain(m.saved); }
+      catch (err) { ctx.postMessage({ t: "toast", text: "❌ No se pudo restaurar: " + (err as Error).message }); }
+    }
     ctx.postMessage({ t: "ready" });
     last = performance.now();
     schedule();
@@ -184,20 +197,23 @@ ctx.onmessage = async (e: MessageEvent) => {
   switch (m.t) {
     case "speed": speed = m.v; break;
     case "pause": paused = !!m.v; break;
+    case "background": background = !!m.v; break;
+    case "training": sim.setTraining(m.guidance, m.exploration); checkpointKey = ""; checkpointAt = 0; break;
     case "budget": budgetMs = m.v; break;
     case "mode": sim.configure(m.mode as Mode); sentHistory = -1; break;
-    case "task": sim.setTask(m.task); sentHistory = -1; sentTerrain = -1; break;
+    case "task": sim.setTask(m.task); sentHistory = -1; sentTerrain = -1; checkpointKey = ""; checkpointAt = 0; break;
     case "terrain": sim.setTerrain(m.i); sentTerrain = -1; break;
-    case "physics": sim.setPhysics(m.v); sentHistory = -1; sentTerrain = -1; break;
+    case "physics": sim.setPhysics(m.v); sentHistory = -1; sentTerrain = -1; checkpointKey = ""; checkpointAt = 0; break;
     case "agents": sim.setSlotCount(m.n); break;
     case "push": sim.push(sim.mode === "train" ? sim.focus : m.slot ?? 0); break;
     case "manual": sim.manualU.set(m.u); break;
     case "resetSlot": sim.resetSlot(m.i); break;
-    case "resetBrain": sim.resetBrain(); sentHistory = -1; break;
-    case "resetAll": sim.resetAllBrains(); sentHistory = -1; sentTerrain = -1; break;
+    case "resetBrain": sim.resetBrain(); sentHistory = -1; checkpointKey = ""; checkpointAt = 0; break;
+    case "resetAll": sim.resetAllBrains(); sentHistory = -1; sentTerrain = -1; checkpointKey = ""; checkpointAt = 0; break;
     case "unlockAll": sim.unlockAll = !!m.v; break;
-    case "autoCurriculum": sim.autoCurriculum = !!m.v; break;
+    case "autoCurriculum": sim.autoCurriculum = !!m.v; checkpointKey = ""; checkpointAt = 0; break;
     case "assist":
+      checkpointKey = ""; checkpointAt = 0;
       sim.autoAssist = !!m.auto;
       if (!m.auto) sim.assist = m.value;
       break;
@@ -205,6 +221,7 @@ ctx.onmessage = async (e: MessageEvent) => {
     case "import":
       try {
         sim.importBrain(m.data);
+        checkpointKey = ""; checkpointAt = 0;
         sentHistory = -1;
         sentTerrain = -1;
         ctx.postMessage({ t: "toast", text: "✅ Cerebro v2 cargado" });

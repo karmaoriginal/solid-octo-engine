@@ -51,7 +51,8 @@ export class Engine {
   private disposed = false;
   private pointers = new Map<number, { x: number; y: number }>();
   private pinchDist = 0;
-  private lastGenSaved = 0;
+  private backgroundTraining = true;
+  private saveWarning = false;
   mobile: boolean;
   private onResize: () => void;
   private onVis: () => void;
@@ -62,12 +63,18 @@ export class Engine {
     this.scene = new Scene3D(canvas, this.mobile);
     this.worker = new SimWorker();
     this.worker.onmessage = (e) => this.onMessage(e.data);
-    this.worker.postMessage({ t: "init", agents: this.agents });
+    let saved: unknown = null;
+    try { const raw = localStorage.getItem(BRAIN_KEY); if (raw) saved = JSON.parse(raw); }
+    catch { this.ev.onToast("⚠️ No se pudo leer el guardado local"); }
+    this.worker.postMessage({ t: "init", agents: this.agents, saved });
     this.applyBudget();
     this.attachInput();
     this.onResize = () => this.scene.resize();
     window.addEventListener("resize", this.onResize);
-    this.onVis = () => this.worker.postMessage({ t: "pause", v: document.hidden || this.userPaused });
+    this.onVis = () => {
+      this.send({ t: "background", v: document.hidden && this.backgroundTraining });
+      this.send({ t: "pause", v: this.userPaused || (document.hidden && !this.backgroundTraining) });
+    };
     document.addEventListener("visibilitychange", this.onVis);
     this.loop = this.loop.bind(this);
     this.raf = requestAnimationFrame(this.loop);
@@ -90,26 +97,24 @@ export class Engine {
       case "snap": {
         const s = m.snap as Snapshot;
         this.mode = s.mode;
-        this.slowTicks = this.speed === 1 && s.mode === "train" && s.effSpeed < 0.7 ? this.slowTicks + 1 : 0;
+        this.slowTicks = !document.hidden && this.speed === 1 && s.mode === "train" && s.effSpeed < 0.7 ? this.slowTicks + 1 : 0;
         if (this.slowTicks >= 12) {
           this.slowTicks = 0;
           this.reduceAgents(0.75);
         }
         this.ev.onSnap(s);
         for (const t of m.events as string[]) this.ev.onToast(t);
-        // autoguardado en el dispositivo cada 25 generaciones
-        if (s.mode === "train" && s.gen - this.lastGenSaved >= 25) {
-          this.lastGenSaved = s.gen;
-          this.requestBrain("auto", (b) => {
-            try {
-              localStorage.setItem(BRAIN_KEY, JSON.stringify(b));
-            } catch {
-              /* almacenamiento lleno: se ignora */
-            }
-          });
-        }
         break;
       }
+      case "checkpoint":
+        try {
+          localStorage.setItem(BRAIN_KEY, JSON.stringify(m.data));
+          this.saveWarning = false;
+        } catch {
+          if (!this.saveWarning) this.ev.onToast("⚠️ No se pudo autoguardar: revisa el espacio del navegador y descarga una copia");
+          this.saveWarning = true;
+        }
+        break;
       case "brain": {
         const cb = this.brainPurpose.get(m.purpose);
         if (cb) {
@@ -137,7 +142,11 @@ export class Engine {
   }
   setPaused(p: boolean) {
     this.userPaused = p;
-    this.send({ t: "pause", v: p });
+    this.onVis();
+  }
+  setBackgroundTraining(enabled: boolean) {
+    this.backgroundTraining = enabled;
+    this.onVis();
   }
   push() {
     this.send({ t: "push", slot: 0 });

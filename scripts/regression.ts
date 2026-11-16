@@ -1,0 +1,41 @@
+import assert from "node:assert/strict";
+import { Simulation } from "../src/sim/sim";
+import { mutationScales, GENOME_SIZE } from "../src/sim/policy";
+import { BODY_INDEX } from "../src/sim/spec";
+
+const sim = await Simulation.create(42);
+sim.desiredSlots = 4;
+sim.configure("train");
+// Reiniciar un candidato no debe dejar la generación esperando un resultado perdido.
+for (let i = 0; i < 30; i++) sim.stepOnce();
+sim.resetSlot(0);
+let steps = 0;
+while (sim.evo.gen < 1 && steps++ < 20000) sim.stepOnce();
+assert.equal(sim.evo.gen, 1, "la generación debe completarse tras resetSlot");
+// La orientación observada debe coincidir con el giro real del cuerpo.
+const a = sim.slots[0].agent;
+a.bodies[BODY_INDEX.pelvis].setRotation({x: 0, y: 0, z: Math.sin(Math.PI/8), w: Math.cos(Math.PI/8)}, true);
+a.readState(1/30);
+const obs = new Float32Array(81);
+a.observe(obs, 0, 1, sim.profile, 0, new Float32Array(16));
+assert(Math.abs(obs[38] - a.upX) < 1e-5);
+assert(Math.abs(obs[40] - a.upZ) < 1e-5);
+const walkScale = mutationScales(0), boxingScale = mutationScales(3);
+assert.equal(walkScale.length, GENOME_SIZE);
+assert(walkScale.some((v, i) => v > 0 && boxingScale[i] === 0));
+sim.setPhysics({gravityScale: .5, loadScale: 1.2, muscleScale: 1.1, fatigueScale: .7, groundFriction: 1});
+sim.setTraining(1.5, 1.2);
+const saved = JSON.parse(JSON.stringify(sim.exportBrain()));
+const gen = sim.evo.gen;
+const restored = await Simulation.create(10);
+restored.desiredSlots = 2;
+restored.configure("train");
+restored.importBrain(saved);
+assert.equal(restored.evo.gen, gen);
+assert.equal(restored.gaitGuidance, 1.5);
+assert.equal(restored.exploration, 1.2);
+assert.equal(restored.snapshot().physics.gravity, 4.905);
+assert.equal(restored.exportBrain().tasks.walk?.mean.length, GENOME_SIZE);
+sim.slots.forEach(s => s.dispose());
+restored.slots.forEach(s => s.dispose());
+console.log("Regresiones de reinicio, orientación, mutaciones y restauración: OK");

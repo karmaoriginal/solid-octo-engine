@@ -34,3 +34,16 @@ Los archivos de cerebro usan formato v2 para las cinco disciplinas. Los guardado
 ## GitHub Pages
 
 El flujo `.github/workflows/pages.yml` compila y publica el contenido de `dist` mediante GitHub Actions al actualizar `main` o la rama de trabajo. En la configuración del repositorio, Pages debe usar **GitHub Actions** como origen. Si el entorno `github-pages` restringe las ramas, debe permitir también la rama que se desee publicar.
+
+
+## Progreso y segundo plano
+
+El último cerebro se autoguarda en el almacenamiento del navegador aproximadamente cada tres segundos si cambia la generación o disciplina; al abrir la página se restaura automáticamente. También se guardan la física y los ajustes de aprendizaje. Se conserva la última generación completa, no el estado físico ni los candidatos parciales. Descargar una copia desde el menú protege contra pérdida del almacenamiento, cambios de navegador o borrado de datos. Si falla el guardado aparece un aviso. La importación de archivos v2 anteriores sigue admitida.
+
+La opción de segundo plano intenta seguir ejecutando el worker mientras la pestaña siga abierta; el sistema operativo o navegador puede limitarlo o suspenderlo, especialmente en móviles. No funciona con la pestaña cerrada, el navegador terminado o el teléfono apagado. GitHub Pages es alojamiento estático, sin CPU de servidor disponible para entrenar. WebGPU puede estar presente en algunos dispositivos, pero Rapier y el entrenamiento aquí siguen ejecutándose en CPU: no existe aceleración WebGPU implementada. Para entrenar siempre en línea sin usar el celular hace falta un servidor de cómputo externo, con su propio servicio y almacenamiento.
+
+## Aprendizaje
+
+El menú permite ajustar la guía de marcha y la exploración neuronal; cada cambio descarta únicamente la generación incompleta. La recompensa de marcha favorece el apoyo alterno y penaliza periodos en el aire y brazos excesivamente hacia atrás. Las mutaciones se concentran en la disciplina activa. La ayuda automática ya no se reduce solo por el paso de generaciones y puede recuperarse si la élite cae repetidamente. Son señales heurísticas y **no garantizan** aprender una marcha estable ni que 300 generaciones basten: los resultados dependen de la semilla, física y ajustes. La red y el banco virtual tienen las limitaciones indicadas arriba.
+
+Pruebas adicionales: `npx tsx scripts/regression.ts` comprueba reinicio de candidatos, observaciones, mutaciones y restauración.
