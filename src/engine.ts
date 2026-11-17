@@ -9,7 +9,7 @@ import SimWorker from "./sim/worker?worker&inline";
  *  ENGINE: une el worker de simulación con la escena 3D
  * ============================================================
  *  - Dibuja a ~60 fps el último fotograma recibido del worker.
- *  - Vigila los FPS y baja calidad / número de agentes si el dispositivo no da abasto.
+ *  - Vigila los FPS y ajusta la calidad gráfica sin cambiar el número de agentes.
  *  - Traduce las acciones de la interfaz en mensajes para el worker.
  */
 
@@ -44,9 +44,6 @@ export class Engine {
   private goodSince = performance.now();
   private lastChange = performance.now();
   private agents: number;
-  private mode: Snapshot["mode"] = "train";
-  private speed = 1;
-  private slowTicks = 0;
   private brainPurpose = new Map<string, (b: BrainFile) => void>();
   private disposed = false;
   private pointers = new Map<number, { x: number; y: number }>();
@@ -96,12 +93,6 @@ export class Engine {
         break;
       case "snap": {
         const s = m.snap as Snapshot;
-        this.mode = s.mode;
-        this.slowTicks = !document.hidden && this.speed === 1 && s.mode === "train" && s.effSpeed < 0.7 ? this.slowTicks + 1 : 0;
-        if (this.slowTicks >= 12) {
-          this.slowTicks = 0;
-          this.reduceAgents(0.75);
-        }
         this.ev.onSnap(s);
         for (const t of m.events as string[]) this.ev.onToast(t);
         break;
@@ -134,7 +125,6 @@ export class Engine {
     this.worker.postMessage(msg);
   }
   setSpeed(v: number) {
-    this.speed = v;
     this.send({ t: "speed", v });
   }
   setMode(mode: Snapshot["mode"]) {
@@ -168,15 +158,6 @@ export class Engine {
   private applyBudget() {
     this.send({ t: "budget", v: [12, 10, 8, 6][Math.min(this.quality, 3)] });
   }
-  private reduceAgents(f: number) {
-    if (this.mode !== "train") return;
-    const n = Math.max(CONFIG.minAgents, Math.floor(this.agents * f));
-    if (n < this.agents) {
-      this.agents = n;
-      this.send({ t: "agents", n });
-      this.ev.onToast(`⚙️ Ajuste automático: ${n} agentes`);
-    }
-  }
   private adapt(now: number) {
     if (now - this.lastPerfCheck < 2000) return;
     this.lastPerfCheck = now;
@@ -189,7 +170,6 @@ export class Engine {
         this.scene.setQuality(this.quality);
         this.applyBudget();
       }
-      if (this.quality >= 2) this.reduceAgents(0.8);
     } else if (fps > 55) {
       if (now - this.goodSince > 25000 && this.quality > 0 && now - this.lastChange > 25000) {
         this.quality--;

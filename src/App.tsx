@@ -443,7 +443,7 @@ export default function App() {
                 }}
                 className="h-8 w-full accent-sky-400"
               />
-              <div className="text-[11px] text-white/50">Se ajusta solo si bajan los FPS (calidad {perf.quality}/3).</div>
+              <div className="text-[11px] text-white/50">Solo cambia cuando mueves este control. La calidad gráfica puede ajustarse automáticamente ({perf.quality}/3).</div>
             </div>
 
             <div className="rounded-2xl bg-white/5 p-3 space-y-2">
