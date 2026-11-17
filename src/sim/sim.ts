@@ -10,6 +10,7 @@ import { pieceBox, terrainY, type Piece } from "./terrain";
 import { CTX, CTX_SIZE, PROP_COUNT, PROP_STRIDE, createTaskMetrics, type PhysicsSettings, type TaskMetrics } from "./tasks";
 import { MUSCLE_VIEW_SIZE } from "./muscles";
 import { RobotController, generationDomain, type DomainVariation } from "./robotics";
+import { swingKneeBonus } from "./gait";
 
 /** Alias de importación para mantener limpio el bloque de arriba. */
 export type { PhysicsSettings } from "./tasks";
@@ -89,6 +90,7 @@ const round5 = (v: number) => Math.round(v * 1e5) / 1e5;
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const findJoint = (re: RegExp) => JOINT_SPECS.findIndex((j) => re.test(j.name));
 const J_SHOULDER = [findJoint(/Hombro L \(flexión\)/), findJoint(/Hombro R \(flexión\)/)];
+const J_KNEE = [findJoint(/^Rodilla L$/), findJoint(/^Rodilla R$/)];
 const J_ELBOW = [findJoint(/Codo L/), findJoint(/Codo R/)];
 const FOREARM = [BODY_INDEX.farmL, BODY_INDEX.farmR];
 const CONTACT_DT = 0.06; // duración estimada del impacto de un puño
@@ -779,7 +781,8 @@ export class Simulation {
       const singleSupport = left !== right ? 1 : 0;
       const airborne = !left && !right ? 1 : 0;
       const armBack = J_SHOULDER.reduce((sum, j) => sum + Math.max(0, -a.angle[j] - 0.45), 0);
-      r += this.gaitGuidance * dtc * (1.2 * posture + 0.8 * singleSupport * Math.max(0, a.vx) - 1.5 * airborne - 0.5 * armBack);
+      const knee = swingKneeBonus(left, right, a.angle[J_KNEE[0]], a.angle[J_KNEE[1]], a.vx);
+      r += this.gaitGuidance * dtc * (1.2 * posture + 0.8 * singleSupport * Math.max(0, a.vx) + 1.4 * posture * knee - 1.5 * airborne - 0.5 * armBack);
     }
     const ev = s.eventCount - s.eventPrev;
     s.eventPrev = s.eventCount;
@@ -1001,6 +1004,8 @@ export class Simulation {
         weightN: mass * gravity,
         gravity,
         gravityScale: CONFIG.gravityScale,
+        kneeLeftDeg: (a?.angle[J_KNEE[0]] ?? 0) * 180 / Math.PI,
+        kneeRightDeg: (a?.angle[J_KNEE[1]] ?? 0) * 180 / Math.PI,
         velocity: a?.speed ?? 0,
         peakSpeed: a?.peakSpeed ?? 0,
         supportN: a?.supportN ?? 0,

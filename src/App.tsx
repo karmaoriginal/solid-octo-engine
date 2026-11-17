@@ -240,7 +240,7 @@ export default function App() {
                 </div>
               )}
               {s && <div className="mt-1 grid grid-cols-3 gap-1"><Stat label="Masa / peso" value={`${s.physics.massKg.toFixed(1)} kg`} sub={`${Math.round(s.physics.weightN)} N`} /><Stat label="Velocidad" value={`${s.physics.velocity.toFixed(1)} m/s`} /><Stat label="Fatiga" value={`${Math.round(s.physics.fatigue * 100)}%`} /></div>}
-              {s && <div className="mt-1 text-[10px] text-white/60">{s.task === "exercise" ? `🏋️ ${s.taskMetrics.reps} rep · ${Math.round(s.taskMetrics.workJ)} J` : s.task === "climb" ? `🧗 ${s.taskMetrics.holdTouches} agarres · presa ${s.taskMetrics.maxHold}` : s.task === "boxing" ? `🥊 ${s.taskMetrics.hits} golpes · ${Math.round(s.taskMetrics.peakPunchN)} N` : s.task === "parkour" ? `🤸 ${s.taskMetrics.wallsCleared} muros · ${s.taskMetrics.landings} aterrizajes` : `🌍 ${s.physics.gravity.toFixed(2)} m/s² · apoyo estimado ${Math.round(s.physics.supportN)} N`}</div>}
+              {s && <div className="mt-1 text-[10px] text-white/60">{s.task === "exercise" ? `🏋️ ${s.taskMetrics.reps} rep · ${Math.round(s.taskMetrics.workJ)} J` : s.task === "climb" ? `🧗 ${s.taskMetrics.holdTouches} agarres · presa ${s.taskMetrics.maxHold}` : s.task === "boxing" ? `🥊 ${s.taskMetrics.hits} golpes · ${Math.round(s.taskMetrics.peakPunchN)} N` : s.task === "parkour" ? `🤸 ${s.taskMetrics.wallsCleared} muros · ${s.taskMetrics.landings} aterrizajes` : `🦵 Rodillas: izq. ${Math.round(s.physics.kneeLeftDeg)}° · der. ${Math.round(s.physics.kneeRightDeg)}°`}</div>}
               <div className="mt-1 flex items-center justify-between px-1 text-[10px] text-white/60">
                 <span>{s?.taskIcon} {s?.taskName} {s?.task === "walk" ? `· ${terrainName}` : ""}</span>
                 <span title="Arnés de equilibrio">🪢 Arnés {assistPct}%</span>
@@ -453,7 +453,7 @@ export default function App() {
             <div className="rounded-2xl bg-white/5 p-3 space-y-2">
               <div className="font-bold">🧠 Ajustes de aprendizaje</div>
               <p className="text-xs text-white/60">Se aplican a la generación siguiente; al aplicar se reinician los episodios incompletos, no el cerebro.</p>
-              <label className="block text-sm">Guía de marcha: {guidance.toFixed(1)}×<input type="range" min="0" max="2" step="0.1" value={guidance} onChange={e => setGuidance(Number(e.target.value))} className="w-full accent-sky-400" /></label>
+              <label className="block text-sm">Guía de marcha y flexión: {guidance.toFixed(1)}×<input type="range" min="0" max="2" step="0.1" value={guidance} onChange={e => setGuidance(Number(e.target.value))} className="w-full accent-sky-400" /></label>
               <label className="block text-sm">Exploración neuronal: {exploration.toFixed(2)}×<input type="range" min="0.25" max="2" step="0.05" value={exploration} onChange={e => setExploration(Number(e.target.value))} className="w-full accent-sky-400" /></label>
               <Btn className="w-full" onClick={() => { eng()?.send({t: "training", guidance, exploration}); toast("🧠 Ajustes aplicados"); }}>Aplicar ajustes</Btn>
               <p className="text-xs text-white/50">Actual: guía {(s?.training.gaitGuidance ?? 1).toFixed(1)}× · exploración {(s?.training.exploration ?? 1).toFixed(2)}×</p>
