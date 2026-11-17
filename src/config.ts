@@ -35,7 +35,7 @@ export const CONFIG = {
   laneWidth: 1.4,
 
   // ---------- Evolución ----------
-  sampledPerGeneration: 24,
+  sampledPerGeneration: 48, // 48 mutaciones + élite y media = 50 candidatos
   initialSigma: 0.35,
   sigmaMin: 0.1,
   cpgScale: 0.5,
@@ -73,6 +73,8 @@ export const CONFIG = {
     step: 0.08,
     minDist: 1.5,
     stallGenerations: 40,
+    /** Generaciones consecutivas de éxito antes de reducir el arnés. */
+    lowerAfter: 3,
     slowStep: 0.04,
     unlockMax: 0.25,
   },

@@ -1,0 +1,68 @@
+name: Publicar cuatro cerebros entrenados
+
+on:
+  push:
+    branches:
+      - arena/f8a7aff1-solid-octo-engine
+    paths:
+      - .github/workflows/publish-trained.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Descargar cuatro resultados del entrenamiento
+        uses: actions/download-artifact@v4
+        with:
+          pattern: brain-*
+          path: training-output
+          merge-multiple: true
+          run-id: 43990990581
+          github-token: ${{ github.token }}
+      - name: Validar y combinar resultados completos
+        run: npx tsx scripts/merge-trained.ts training-output public/trained-brains.json 1000 walk,exercise,boxing,parkour
+      - name: Guardar los cerebros en esta rama
+        env:
+          TRAIN_BRANCH: ${{ github.ref_name }}
+          TRAIN_SHA: ${{ github.sha }}
+        run: |
+          current=$(git ls-remote origin "refs/heads/$TRAIN_BRANCH" | cut -f1)
+          if [ "$current" != "$TRAIN_SHA" ]; then
+            echo "La rama cambió; no se publicarán modelos sobre código nuevo." >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/trained-brains.json
+          git commit -m "Add four trained brains"
+          git push origin "HEAD:refs/heads/$TRAIN_BRANCH"
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

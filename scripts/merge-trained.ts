@@ -8,9 +8,14 @@ const inputDir = process.argv[2] ?? "training-output";
 const output = process.argv[3] ?? "public/trained-brains.json";
 const expectedGenerations = Number(process.argv[4] ?? 1000);
 if (!Number.isInteger(expectedGenerations) || expectedGenerations < 1) throw new Error("Número de generaciones no válido");
+const requested = process.argv[5]?.split(",") ?? TASKS.map(t => t.id);
+if (!requested.includes("walk") || new Set(requested).size !== requested.length || requested.some(id => !TASKS.some(t => t.id === id))) {
+  throw new Error("Lista de disciplinas no válida (debe incluir walk)");
+}
 let result: BrainFile | undefined;
 const tasks: BrainFile["tasks"] = {};
 for (const t of TASKS) {
+  if (!requested.includes(t.id)) continue;
   const data = JSON.parse(readFileSync(`${inputDir}/${t.id}.json`, "utf8")) as {
     task: TaskId; population: number; generations: number; brain: BrainFile;
   };
@@ -31,4 +36,4 @@ result.activeTask = "walk";
 result.savedAt = new Date().toISOString();
 mkdirSync(dirname(output), {recursive: true});
 writeFileSync(output, JSON.stringify(result));
-console.log(`Combinados ${TASKS.length} cerebros, ${expectedGenerations} generaciones y 100 candidatos por generación`);
+console.log(`Combinados ${requested.length} cerebros, ${expectedGenerations} generaciones y 100 candidatos por generación`);

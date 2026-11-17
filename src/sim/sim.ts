@@ -51,6 +51,7 @@ interface BrainState {
   history: GenStat[];
   assist: number;
   assistStall: number;
+  assistGood: number;
   terrainBest: number[];
   unlocked: number;
   bestEver: number;
@@ -67,6 +68,7 @@ export interface TaskBrainFile {
   terrainBest: number[];
   unlocked: number;
   assist: number;
+  assistGood?: number;
   terrainIdx: number;
   bestEver: number;
 }
@@ -209,6 +211,7 @@ export class Simulation {
   assist = CONFIG.assist.start;
   autoAssist = true;
   private assistStall = 0;
+  private assistGood = 0;
   private bestEver = 0;
 
   evo!: Evolution;
@@ -266,6 +269,7 @@ export class Simulation {
         history: [],
         assist: taskDef(id).assistStart,
         assistStall: 0,
+        assistGood: 0,
         terrainBest: TERRAINS.map(() => 0),
         unlocked: 0,
         bestEver: 0,
@@ -283,6 +287,7 @@ export class Simulation {
     b.history = this.history;
     b.assist = this.assist;
     b.assistStall = this.assistStall;
+    b.assistGood = this.assistGood;
     b.terrainBest = this.terrainBest;
     b.unlocked = this.unlocked;
     b.bestEver = this.bestEver;
@@ -294,6 +299,7 @@ export class Simulation {
     this.history = b.history;
     this.assist = b.assist;
     this.assistStall = b.assistStall;
+    this.assistGood = b.assistGood;
     this.terrainBest = b.terrainBest;
     this.unlocked = b.unlocked;
     this.bestEver = b.bestEver;
@@ -850,15 +856,22 @@ export class Simulation {
     const goal = Math.min(A.minDist, def.target * 0.35);
     this.assistStall++;
     if (elite.time >= def.episode - 0.1 && elite.metric >= goal && this.assist > 0) {
-      this.assist = Math.max(0, this.assist - A.step);
       this.assistStall = 0;
-    } else if (this.assistStall >= A.stallGenerations) {
-      // Recuperar gradualmente apoyo si la élite cae inmediatamente tras quitarlo.
-      if (elite.time < 2 && this.assist < def.assistStart) {
-        this.assist = Math.min(def.assistStart, this.assist + A.step);
-        this.events.push("🪢 Se ha aumentado el arnés para recuperar el equilibrio");
+      // Bajar solo tras varias generaciones consecutivas superando el listón.
+      if (++this.assistGood >= A.lowerAfter) {
+        this.assist = Math.max(0, this.assist - A.step);
+        this.assistGood = 0;
       }
-      this.assistStall = 0;
+    } else {
+      this.assistGood = 0;
+      if (this.assistStall >= A.stallGenerations) {
+        // Recuperar gradualmente apoyo si la élite cae inmediatamente tras quitarlo.
+        if (elite.time < 2 && this.assist < def.assistStart) {
+          this.assist = Math.min(def.assistStart, this.assist + A.step);
+          this.events.push("🪢 Se ha aumentado el arnés para recuperar el equilibrio");
+        }
+        this.assistStall = 0;
+      }
     }
     if (this.assist > 0 && this.assist < 0.005) {
       this.assist = 0;
@@ -889,6 +902,7 @@ export class Simulation {
     b.history = [];
     b.assist = taskDef(this.taskId).assistStart;
     b.assistStall = 0;
+    b.assistGood = 0;
     b.terrainBest = TERRAINS.map(() => 0);
     b.unlocked = 0;
     b.bestEver = 0;
@@ -1061,6 +1075,7 @@ export class Simulation {
       terrainBest: b.terrainBest.map(round5),
       unlocked: b.unlocked,
       assist: round5(b.assist),
+      assistGood: b.assistGood,
       terrainIdx: b.terrainIdx,
       bestEver: round5(b.bestEver),
     };
@@ -1110,6 +1125,7 @@ export class Simulation {
         history,
         assist: clamp(d.assist ?? t.assistStart, 0, 1),
         assistStall: 0,
+        assistGood: Number.isInteger(d.assistGood) ? clamp(d.assistGood!, 0, CONFIG.assist.lowerAfter - 1) : 0,
         terrainBest: (d.terrainBest ?? TERRAINS.map(() => 0)).slice(0, TERRAINS.length),
         unlocked: clamp(d.unlocked ?? 0, 0, TERRAINS.length - 1),
         bestEver: d.bestEver ?? 0,
@@ -1139,7 +1155,7 @@ export class Simulation {
     this.activateBrain(state);
     this.buildLayout(this.taskId, this.terrainIdx);
     this.restartAll(true);
-    this.events.push("✅ Cerebros de las 5 disciplinas cargados");
+    this.events.push("✅ Cerebros disponibles cargados; las disciplinas sin datos empiezan desde cero");
   }
 }
 
