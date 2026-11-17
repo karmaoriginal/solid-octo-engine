@@ -1,0 +1,97 @@
+name: Entrenar 100 agentes por disciplina
+
+on:
+  push:
+    branches:
+      - arena/f8a7aff1-solid-octo-engine
+    paths:
+      - .github/workflows/train.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: train-brains-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  train:
+    name: Entrenar ${{ matrix.task }} · 100 agentes · 1000 generaciones
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [walk, exercise, climb, boxing, parkour]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Ejecutar entrenamiento
+        timeout-minutes: 340
+        run: npx tsx scripts/train-actions.ts "${{ matrix.task }}" 1000 100 "training-output/${{ matrix.task }}.json"
+      - name: Guardar resultado o último checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brain-${{ matrix.task }}
+          path: training-output/${{ matrix.task }}.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  publish:
+    name: Combinar y publicar cerebros completos
+    needs: train
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: brain-*
+          path: training-output
+          merge-multiple: true
+      - run: npx tsx scripts/merge-trained.ts training-output public/trained-brains.json 1000
+      - name: Guardar el modelo en esta misma rama sin sobrescribir cambios
+        env:
+          TRAIN_BRANCH: ${{ github.ref_name }}
+          TRAIN_SHA: ${{ github.sha }}
+        run: |
+          current=$(git ls-remote origin "refs/heads/$TRAIN_BRANCH" | cut -f1)
+          if [ "$current" != "$TRAIN_SHA" ]; then
+            echo "La rama cambió durante el entrenamiento. Los artefactos se conservaron; no se publicará sobre código nuevo." >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/trained-brains.json
+          git commit -m "Add trained brains for five disciplines"
+          git push origin "HEAD:refs/heads/$TRAIN_BRANCH"
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
