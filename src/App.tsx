@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CONFIG, TASKS, TERRAINS } from "./config";
-import { BRAIN_KEY, Engine, type Snapshot } from "./engine";
+import { BRAIN_KEY, Engine, fetchTrainedBrain, type Snapshot } from "./engine";
 import { CAMERA_MODES } from "./render/scene";
 import { JOINT_SPECS, N_JOINTS } from "./sim/spec";
 import { Chart } from "./ui/Chart";
@@ -171,6 +171,12 @@ export default function App() {
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
       toast(`💾 Cerebro guardado (gen ${(b.tasks[b.activeTask]?.gen ?? 0)})`);
     });
+  };
+  const loadTrained = async () => {
+    if (!window.confirm("Esto reemplazará los cerebros y ajustes actuales. Guarda primero una copia desde el menú si quieres conservarlos. ¿Continuar?")) return;
+    const brain = await fetchTrainedBrain();
+    if (!brain) return toast("⏳ El cerebro preentrenado aún no está disponible");
+    eng()?.send({ t: "import", data: brain });
   };
   const loadLocal = () => {
     const raw = localStorage.getItem(BRAIN_KEY);
@@ -426,6 +432,7 @@ export default function App() {
               <Btn className="min-h-14 !bg-emerald-600" onClick={saveBrain}>💾 Guardar cerebro</Btn>
               <Btn className="min-h-14" onClick={() => fileRef.current?.click()}>📂 Cargar archivo</Btn>
               <Btn className="min-h-14 col-span-2" onClick={loadLocal}>📱 Cargar último guardado del dispositivo</Btn>
+              <Btn className="min-h-14 col-span-2" onClick={loadTrained}>☁️ Cargar cerebros preentrenados</Btn>
             </div>
             <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
 

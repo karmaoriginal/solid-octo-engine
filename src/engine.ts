@@ -32,6 +32,17 @@ export interface EngineEvents {
 
 export const BRAIN_KEY = "ia-camina-brain-v2";
 
+/** El archivo preentrenado se publica junto al sitio, bajo la misma ruta de Pages. */
+export async function fetchTrainedBrain(): Promise<BrainFile | null> {
+  try {
+    const response = await fetch(new URL("./trained-brains.json", document.baseURI), { cache: "no-cache" });
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data?.format !== "ia-camina" || data?.version !== 2 || !data?.tasks) return null;
+    return data as BrainFile;
+  } catch { return null; }
+}
+
 export class Engine {
   private worker: Worker;
   scene: Scene3D;
@@ -63,7 +74,11 @@ export class Engine {
     let saved: unknown = null;
     try { const raw = localStorage.getItem(BRAIN_KEY); if (raw) saved = JSON.parse(raw); }
     catch { this.ev.onToast("⚠️ No se pudo leer el guardado local"); }
-    this.worker.postMessage({ t: "init", agents: this.agents, saved });
+    // Nunca sustituir un guardado local por el cerebro publicado automáticamente.
+    if (saved) this.worker.postMessage({ t: "init", agents: this.agents, saved });
+    else void fetchTrainedBrain().then((trained) => {
+      if (!this.disposed) this.worker.postMessage({ t: "init", agents: this.agents, saved: trained });
+    });
     this.applyBudget();
     this.attachInput();
     this.onResize = () => this.scene.resize();

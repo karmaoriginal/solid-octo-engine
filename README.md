@@ -59,3 +59,9 @@ Son aproximaciones inspiradas en robótica, no un sistema de transferencia a rob
 ### Flexión de rodillas al caminar
 
 Las dos rodillas pueden flexionarse en marcha y en modo manual. Para el entrenamiento de marcha se añadió una recompensa moderada por flexionar la rodilla de la pierna libre al avanzar con el otro pie apoyado; no se impone un movimiento ni garantiza una marcha aprendida. La intensidad depende de **Guía de marcha y flexión**. El HUD muestra los ángulos observados de ambas rodillas y los cerebros guardados se conservan. Se puede comprobar el movimiento físico con `npx tsx scripts/knee-check.ts`.
+
+## Entrenamiento en GitHub Actions
+
+El flujo `Entrenar 100 agentes por disciplina` ejecuta cinco trabajos de CPU independientes: 100 agentes y 100 candidatos por generación, durante 1.000 generaciones para cada actividad. Rapier avanza los 100 mundos en un proceso por trabajo; no son 100 máquinas ni un entrenamiento en GPU. La publicación solo se realiza si los cinco trabajos terminan y pasan la validación. Cada trabajo guarda checkpoints como artefacto (retención de 90 días). Puede tardar horas, consumir cuota de Actions o exceder su límite; no se garantiza que los personajes dominen las actividades.
+
+Si la rama cambia durante el entrenamiento, la publicación se detiene para no sobrescribir código nuevo y los artefactos quedan disponibles. Si todo termina, el flujo guarda `public/trained-brains.json` en la misma rama y publica el juego. El navegador usa ese archivo automáticamente solo si no tiene un cerebro local; en caso contrario conserva el progreso. En el menú se puede elegir **Cargar cerebros preentrenados**, previa confirmación; esto reemplaza los cerebros y ajustes actuales, por lo que conviene descargar antes una copia. Las nuevas generaciones siguen ejecutándose en el dispositivo, no en Pages.
