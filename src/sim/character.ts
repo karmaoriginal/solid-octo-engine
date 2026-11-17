@@ -106,7 +106,7 @@ export class Agent {
   private pFwd = [1, 0, 0];
   private cUp = [0, 1, 0];
 
-  constructor(private world: RAPIER.World, loadKg = 0) {
+  constructor(private world: RAPIER.World, loadKg = 0, public gravity = CONFIG.gravity * CONFIG.gravityScale) {
     this.loadKg = Math.max(0, loadKg);
     this.totalMassKg = TOTAL_MASS + this.loadKg;
     for (const b of bodies) {
@@ -394,7 +394,7 @@ export class Agent {
     this.comVy = cv / Math.max(1, mass);
     const ay = (this.comVy - this.prevComVy) / dtc;
     this.prevComVy = this.comVy;
-    this.supportN = clamp(this.totalMassKg * (ay - CONFIG.gravity * CONFIG.gravityScale), 0, 8000);
+    this.supportN = clamp(this.totalMassKg * (ay - this.gravity), 0, 8000);
     this.peakSupportN = Math.max(this.peakSupportN, this.supportN);
     this.muscleForceN = this.muscles.meanForceN;
     this.peakForceN = this.muscles.peakForceN;
@@ -410,7 +410,7 @@ export class Agent {
     if (a <= 0) return;
     const h = this.py - groundY;
     if (h < STAND_PELVIS_Y + 0.02) {
-      pelvis.addForce({ x: 0, y: a * CONFIG.assist.weightSupport * this.totalMassKg * Math.abs(CONFIG.gravity * CONFIG.gravityScale), z: 0 }, false);
+      pelvis.addForce({ x: 0, y: a * CONFIG.assist.weightSupport * this.totalMassKg * Math.abs(this.gravity), z: 0 }, false);
     }
   }
 

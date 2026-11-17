@@ -81,6 +81,7 @@ export default function App() {
   const [background, setBackground] = useState(true);
   const [guidance, setGuidance] = useState(1);
   const [exploration, setExploration] = useState(1);
+  const [randomization, setRandomization] = useState(0);
   const [gpu] = useState(() => typeof navigator !== "undefined" && "gpu" in navigator);
 
   const toast = useCallback((text: string) => {
@@ -192,6 +193,9 @@ export default function App() {
   };
 
   const s = snap;
+  useEffect(() => {
+    if (snap) setRandomization(snap.robotics.randomization);
+  }, [snap?.robotics.randomization]);
   const mode = s?.mode ?? "train";
   const last = s?.last;
   const stage = s?.stage ?? { level: 0, label: "Empezando…" };
@@ -453,6 +457,13 @@ export default function App() {
               <label className="block text-sm">Exploración neuronal: {exploration.toFixed(2)}×<input type="range" min="0.25" max="2" step="0.05" value={exploration} onChange={e => setExploration(Number(e.target.value))} className="w-full accent-sky-400" /></label>
               <Btn className="w-full" onClick={() => { eng()?.send({t: "training", guidance, exploration}); toast("🧠 Ajustes aplicados"); }}>Aplicar ajustes</Btn>
               <p className="text-xs text-white/50">Actual: guía {(s?.training.gaitGuidance ?? 1).toFixed(1)}× · exploración {(s?.training.exploration ?? 1).toFixed(2)}×</p>
+            </div>
+            <div className="rounded-2xl bg-white/5 p-3 space-y-2">
+              <div className="font-bold">🤖 Control robótico</div>
+              <Toggle label="Estabilización y límites de acción" desc="Retroalimentación limitada en marcha y suavizado de órdenes de la IA. No afecta al modo manual." on={s?.robotics.controller ?? true} onChange={v => eng()?.send({t: "robotics", controller: v, randomization: s?.robotics.randomization ?? 0})} />
+              <label className="block text-sm">Variación física por generación: ±{Math.round(randomization * 100)}%<input type="range" min="0" max="0.25" step="0.01" value={randomization} onChange={e => setRandomization(Number(e.target.value))} className="w-full accent-sky-400" /></label>
+              <Btn className="w-full" onClick={() => eng()?.send({t: "robotics", controller: s?.robotics.controller ?? true, randomization})}>Aplicar variación</Btn>
+              <p className="text-xs text-white/50">Misma gravedad y fricción para todos los candidatos de una generación; en Probar y Manual se usan valores normales. Aplicar reinicia los episodios incompletos, no el aprendizaje. Actual: ±{Math.round((s?.robotics.randomization ?? 0) * 100)}%.</p>
             </div>
             <Toggle label="Intentar entrenar en segundo plano" desc="Solo con la página abierta: el navegador puede reducir la velocidad o suspenderla para ahorrar batería." on={background} onChange={v => { setBackground(v); eng()?.setBackgroundTraining(v); }} />
             <p className="text-xs leading-relaxed text-white/50">Autoguardado local aproximadamente cada 3 segundos cuando hay progreso; se restaura al abrir. La generación en curso puede repetirse. Exporta una copia para no depender del almacenamiento del navegador. GitHub Pages no ejecuta la simulación. WebGPU {gpu ? "está disponible en este navegador, pero esta simulación todavía usa CPU" : "no está disponible aquí"}; Rapier y el entrenamiento actual no usan GPU.</p>

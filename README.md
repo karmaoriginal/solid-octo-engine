@@ -47,3 +47,11 @@ La opción de segundo plano intenta seguir ejecutando el worker mientras la pest
 El menú permite ajustar la guía de marcha y la exploración neuronal; cada cambio descarta únicamente la generación incompleta. La recompensa de marcha favorece el apoyo alterno y penaliza periodos en el aire y brazos excesivamente hacia atrás. Las mutaciones se concentran en la disciplina activa. La ayuda automática ya no se reduce solo por el paso de generaciones y puede recuperarse si la élite cae repetidamente. Son señales heurísticas y **no garantizan** aprender una marcha estable ni que 300 generaciones basten: los resultados dependen de la semilla, física y ajustes. La red y el banco virtual tienen las limitaciones indicadas arriba.
 
 Pruebas adicionales: `npx tsx scripts/regression.ts` comprueba reinicio de candidatos, observaciones, mutaciones y restauración.
+
+## Técnicas de robótica simuladas
+
+En **Menú → Control robótico** se puede activar una capa de control de acción: limita la velocidad de cambio de las órdenes de la política y aplica una corrección proporcional-derivativa acotada basada en la inclinación y velocidad angular del tronco durante la marcha. No fuerza directamente el cuerpo ni actúa sobre el modo manual; el arnés es independiente. Las articulaciones siguen teniendo controladores PD y límites de torque.
+
+También puede activarse **aleatorización de dominio** (por defecto desactivada): la gravedad y fricción varían hasta el porcentaje elegido en cada generación de entrenamiento. Todos los candidatos, incluyendo élite y media, usan la misma muestra determinista por generación, independientemente del número de agentes o del orden de evaluación. La comparación entre generaciones no es una evaluación fija; Probar y Manual usan condiciones nominales. Al cambiar estos ajustes se reinicia la generación incompleta. Los ajustes se guardan en el archivo v2; los guardados v2 anteriores conservan el controlador anterior hasta que se active esta opción.
+
+Son aproximaciones inspiradas en robótica, no un sistema de transferencia a robots físicos, ni entrenamiento con hardware real. La estabilidad, los límites y la seguridad no están validados para un robot real; tampoco se garantiza una mejora de aprendizaje. `npx tsx scripts/robotics-test.ts` comprueba límites, condiciones comunes y compatibilidad de guardados.

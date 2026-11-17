@@ -9,6 +9,7 @@ import { buildTaskLayout, type Hold, type TaskLayout, type Wall } from "./course
 import { pieceBox, terrainY, type Piece } from "./terrain";
 import { CTX, CTX_SIZE, PROP_COUNT, PROP_STRIDE, createTaskMetrics, type PhysicsSettings, type TaskMetrics } from "./tasks";
 import { MUSCLE_VIEW_SIZE } from "./muscles";
+import { RobotController, generationDomain, type DomainVariation } from "./robotics";
 
 /** Alias de importación para mantener limpio el bloque de arriba. */
 export type { PhysicsSettings } from "./tasks";
@@ -80,6 +81,7 @@ export interface BrainFile {
   physics?: PhysicsSettings;
   autoAssist?: boolean;
   autoCurriculum?: boolean;
+  robotics?: { controller: boolean; randomization: number };
   model: typeof BRAIN_INFO;
 }
 
@@ -105,6 +107,8 @@ export class Slot {
   agent!: Agent;
   role: Role = "es";
   policy = new Policy();
+  controller = new RobotController();
+  domain: DomainVariation = { gravity: 1, friction: 1 };
   state: SlotState = "idle";
   laneZ = 0;
   cand = -1;
@@ -129,9 +133,10 @@ export class Slot {
   eventPrev = 0;
   comboPrev = 0;
 
-  build(layout: TaskLayout) {
+  build(layout: TaskLayout, domain: DomainVariation = { gravity: 1, friction: 1 }) {
+    this.domain = domain;
     if (this.world) this.world.free();
-    const w = new RAPIER.World({ x: 0, y: CONFIG.gravity * CONFIG.gravityScale, z: 0 });
+    const w = new RAPIER.World({ x: 0, y: CONFIG.gravity * CONFIG.gravityScale * domain.gravity, z: 0 });
     w.timestep = CONFIG.physicsDt;
     w.integrationParameters.numSolverIterations = CONFIG.solverIterations;
     const ground = w.createRigidBody(RAPIER.RigidBodyDesc.fixed());
@@ -143,7 +148,7 @@ export class Slot {
         RAPIER.ColliderDesc.cuboid(b.halfLen, b.halfThick, hw)
           .setTranslation(b.cx, b.cy, 0)
           .setRotation({ x: 0, y: 0, z: Math.sin(b.angle / 2), w: Math.cos(b.angle / 2) })
-          .setFriction(CONFIG.groundFriction)
+          .setFriction(CONFIG.groundFriction * domain.friction)
           .setRestitution(0)
           .setCollisionGroups(GROUP_TERRAIN),
         ground,
@@ -154,7 +159,7 @@ export class Slot {
       w.createCollider(
         RAPIER.ColliderDesc.cuboid(st.size[0], st.size[1], st.size[2])
           .setTranslation(st.pos[0], st.pos[1], st.pos[2])
-          .setFriction(CONFIG.groundFriction)
+          .setFriction(CONFIG.groundFriction * domain.friction)
           .setRestitution(0)
           .setCollisionGroups(GROUP_TERRAIN),
         ground,
@@ -181,7 +186,7 @@ export class Slot {
       this.bag = body;
     }
     this.world = w;
-    this.agent = new Agent(w, layout.loadKg);
+    this.agent = new Agent(w, layout.loadKg, CONFIG.gravity * CONFIG.gravityScale * domain.gravity);
   }
   dispose() {
     if (this.world) this.world.free();
@@ -211,6 +216,8 @@ export class Simulation {
   /** Peso de la recompensa de pasos alternados y estabilidad en marcha. */
   gaitGuidance = 1;
   exploration = 1;
+  robotController = true;
+  domainRandomization = 0;
   private nextCand = 0;
   private results: (Result | null)[] = [];
   private completed = 0;
@@ -324,6 +331,15 @@ export class Simulation {
     this.restartAll(true);
   }
 
+  setRobotics(controller: boolean, randomization: number) {
+    if (!Number.isFinite(randomization)) return;
+    const amount = clamp(randomization, 0, 0.25);
+    if (this.robotController === controller && this.domainRandomization === amount) return;
+    this.robotController = controller;
+    this.domainRandomization = amount;
+    this.restartAll(true);
+  }
+
   setPhysics(p: PhysicsSettings) {
     CONFIG.gravityScale = clamp(p.gravityScale, 0.2, 2);
     CONFIG.loadScale = clamp(p.loadScale, 0.2, 2);
@@ -385,7 +401,11 @@ export class Simulation {
     } else if (s.role === "brain") {
       s.policy.set(this.evo.elite, ti);
     }
-    s.build(this.layout);
+    // Una única muestra por generación asegura una comparación justa entre candidatos,
+    // incluso cuando se evalúan por tandas o cambia el número de agentes.
+    const domain = s.role === "es" ? generationDomain(this.evo.gen, ti, this.domainRandomization) : { gravity: 1, friction: 1 };
+    s.build(this.layout, domain);
+    s.controller.reset();
     const a = s.agent;
     a.reset(0, 0, this.layout.spawnY);
     s.state = "run";
@@ -419,6 +439,7 @@ export class Simulation {
     } else {
       a.observe(s.obs, s.t, s.policy.freq, this.layout.profile, taskIndex(this.taskId), s.ctx);
       s.policy.act(s.obs, s.t, s.u);
+      if (this.robotController) s.controller.apply(s.u, a, dtc, this.taskId === "walk");
     }
     s.uPrev.set(s.u);
     a.applyActions(s.u, dtc);
@@ -505,6 +526,7 @@ export class Simulation {
     this.fillContext(s, a, g);
     a.observe(s.obs, s.t, s.policy.freq, prof, taskIndex(this.taskId), s.ctx);
     s.policy.act(s.obs, s.t, s.u);
+    if (this.robotController) s.controller.apply(s.u, a, dtc, this.taskId === "walk");
     const mech = this.taskMechanics(s, a, s.u, dtc, g);
 
     if (s.role === "es") {
@@ -527,7 +549,7 @@ export class Simulation {
     const ctx = s.ctx;
     const def = taskDef(this.taskId);
     const m = s.metrics;
-    const gravity = Math.abs(CONFIG.gravity * CONFIG.gravityScale);
+    const gravity = Math.abs(a.gravity);
     const handSpeed = (Math.hypot(a.handVel[0].x, a.handVel[0].y, a.handVel[0].z) + Math.hypot(a.handVel[1].x, a.handVel[1].y, a.handVel[1].z)) * 0.5;
     const ph = 2 * Math.PI * s.policy.freq * s.t;
     ctx[CTX.goal] = clamp((def.target - s.metric) / def.target, -1, 1);
@@ -590,7 +612,7 @@ export class Simulation {
       }
     } else if (this.taskId === "exercise") {
       const depth = clamp((0.95 - (a.py - g)) / 0.42, 0, 1);
-      const work = Math.max(0, a.vy) * a.totalMassKg * Math.abs(CONFIG.gravity * CONFIG.gravityScale) * dtc;
+      const work = Math.max(0, a.vy) * a.totalMassKg * Math.abs(a.gravity) * dtc;
       m.workJ += work;
       m.minPelvis = Math.min(m.minPelvis, a.py - g);
       if (!m.squatDown && a.py - g < 0.66) m.squatDown = true;
@@ -937,7 +959,7 @@ export class Simulation {
     const fi = this.updateFocus();
     const fs = this.slots[fi] ?? this.slots[0];
     const a = fs?.agent;
-    const gravity = Math.abs(CONFIG.gravity * CONFIG.gravityScale);
+    const gravity = Math.abs(a?.gravity ?? CONFIG.gravity * CONFIG.gravityScale);
     const mass = a?.totalMassKg ?? TOTAL_MASS;
     const m = fs?.metrics ?? createTaskMetrics();
     const taskBest: Record<string, number> = {};
@@ -972,6 +994,7 @@ export class Simulation {
       taskBest,
       model: BRAIN_INFO,
       training: { gaitGuidance: this.gaitGuidance, exploration: this.exploration },
+      robotics: { controller: this.robotController, randomization: this.domainRandomization, gravityFactor: fs?.domain.gravity ?? 1, frictionFactor: fs?.domain.friction ?? 1 },
       physics: {
         massKg: mass,
         loadKg: this.layout.loadKg,
@@ -1053,6 +1076,7 @@ export class Simulation {
       physics: { gravityScale: CONFIG.gravityScale, loadScale: CONFIG.loadScale, muscleScale: CONFIG.muscleScale, fatigueScale: CONFIG.fatigueScale, groundFriction: CONFIG.groundFriction },
       autoAssist: this.autoAssist,
       autoCurriculum: this.autoCurriculum,
+      robotics: { controller: this.robotController, randomization: this.domainRandomization },
       model: BRAIN_INFO,
     };
   }
@@ -1095,6 +1119,9 @@ export class Simulation {
       CONFIG.fatigueScale = clamp(b.physics.fatigueScale, 0, 2.5);
       CONFIG.groundFriction = clamp(b.physics.groundFriction, 0.3, 1.8);
     }
+    // Los archivos v2 anteriores conservan su comportamiento por defecto.
+    this.robotController = b.robotics?.controller === true;
+    this.domainRandomization = Number.isFinite(b.robotics?.randomization) ? clamp(b.robotics!.randomization, 0, 0.25) : 0;
     if (typeof b.autoAssist === "boolean") this.autoAssist = b.autoAssist;
     if (typeof b.autoCurriculum === "boolean") this.autoCurriculum = b.autoCurriculum;
     if (b.training && Number.isFinite(b.training.gaitGuidance) && Number.isFinite(b.training.exploration)) {

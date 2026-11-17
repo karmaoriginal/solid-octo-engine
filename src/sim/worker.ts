@@ -198,6 +198,7 @@ ctx.onmessage = async (e: MessageEvent) => {
     case "speed": speed = m.v; break;
     case "pause": paused = !!m.v; break;
     case "background": background = !!m.v; break;
+    case "robotics": sim.setRobotics(!!m.controller, m.randomization); checkpointKey = ""; checkpointAt = 0; break;
     case "training": sim.setTraining(m.guidance, m.exploration); checkpointKey = ""; checkpointAt = 0; break;
     case "budget": budgetMs = m.v; break;
     case "mode": sim.configure(m.mode as Mode); sentHistory = -1; break;
